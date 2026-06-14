@@ -7,13 +7,13 @@ from botocore.exceptions import ClientError
 import json, logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-def _log(event_name, **fields):
-    logger.info(json.dumps({"event": event_name, **fields}))
-    
+  
 
 TABLE_NAME = os.environ.get("TABLE_NAME", "shortify-urls")
 
+def log_event(name, **fields):
+    """Emit one JSON log line so CloudWatch can query the fields."""
+    logger.info(json.dumps({"event": name, **fields}))
 
 def _table():
     return boto3.resource("dynamodb").Table(TABLE_NAME)
@@ -76,5 +76,7 @@ def lambda_handler(event, context):
         )
     except ClientError:
         pass
+    
+    log_event("redirect", code=code, target=long_url)
 
     return _redirect(long_url)

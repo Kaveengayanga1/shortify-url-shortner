@@ -11,9 +11,6 @@ import json, logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def _log(event_name, **fields):
-    logger.info(json.dumps({"event": event_name, **fields}))
-
 # ---- settings ----
 TABLE_NAME = os.environ.get("TABLE_NAME", "shortify-urls")
 
@@ -23,6 +20,9 @@ CODE_LENGTH = 7
 MAX_RETRIES = 5
 ALLOWED_SCHEMES = ("http://", "https://")
 
+def log_event(name, **fields):
+    """Emit one JSON log line so CloudWatch can query the fields."""
+    logger.info(json.dumps({"event": name, **fields}))
 
 def _table():
     """Return the DynamoDB table object. Made at call time so tests can fake it."""
@@ -89,6 +89,7 @@ def lambda_handler(event, context):
                 # Only write if no item with this PK exists yet.
                 ConditionExpression="attribute_not_exists(PK)",
             )
+            log_event("link_created", code=code, owner=owner_id)
             return _response(201, {
                 "shortCode": code,
                 "longUrl": long_url,
