@@ -47,7 +47,8 @@ resource "aws_lambda_permission" "create" {
 }
 
 output "api_base_url" {
-  value = aws_apigatewayv2_stage.default.invoke_url
+  # value = aws_apigatewayv2_stage.default.invoke_url
+  value = trimsuffix(aws_apigatewayv2_stage.default.invoke_url, "/")
 }
 
 
