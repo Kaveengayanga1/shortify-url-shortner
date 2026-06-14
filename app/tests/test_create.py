@@ -1,4 +1,5 @@
 import json
+import time
 
 import boto3
 from moto import mock_aws
@@ -78,3 +79,22 @@ def test_missing_owner_defaults_to_anonymous():
     item = table.get_item(Key={"PK": f"SHORT#{body['shortCode']}", "SK": "META"})["Item"]
     assert item["ownerId"] == "anonymous"
     assert item["GSI1PK"] == "OWNER#anonymous"
+
+@mock_aws
+def test_ttl_days_sets_expiry():
+    table = _make_table()
+    event = {"body": json.dumps({"url": "https://example.com", "ttlDays": 7})}
+    result = handler.lambda_handler(event, None)
+    assert result["statusCode"] == 201
+    body = json.loads(result["body"])
+    assert "expiresAt" in body
+    # ~7 days from now, allow a little slack
+    expected = int(time.time()) + 7 * 86400
+    assert abs(body["expiresAt"] - expected) < 120
+
+
+@mock_aws
+def test_bad_ttl_rejected():
+    _make_table()
+    event = {"body": json.dumps({"url": "https://example.com", "ttlDays": "lots"})}
+    assert handler.lambda_handler(event, None)["statusCode"] == 400

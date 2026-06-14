@@ -1,13 +1,13 @@
 import json
+import logging
 import os
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
-from botocore.exceptions import ClientError
 
-import json, logging
+from botocore.exceptions import ClientError
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -67,6 +67,20 @@ def lambda_handler(event, context):
         return _response(400, {"error": "Field 'url' must be a valid http or https link."})
 
     owner_id = (data.get("ownerId") or "anonymous").strip()
+
+    # Optional expiry. If the caller sends ttlDays, the link auto-deletes after that.
+    ttl_days = data.get("ttlDays")
+    expires_at = None
+    if ttl_days is not None:
+        try:
+            days = int(ttl_days)
+        except (TypeError, ValueError):
+            return _response(400, {"error": "ttlDays must be a whole number."})
+        if days < 1 or days > 3650:
+            return _response(400, {"error": "ttlDays must be between 1 and 3650."})
+        expires_at = int((datetime.now(timezone.utc) + timedelta(days=days)).timestamp())
+
+        
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     table = _table()
 
@@ -74,27 +88,30 @@ def lambda_handler(event, context):
     #    If the code is already taken, generate a new one and try again.
     for _ in range(MAX_RETRIES):
         code = generate_code()
+        item = {
+            "PK": f"SHORT#{code}",
+            "SK": "META",
+            "longUrl": long_url,
+            "ownerId": owner_id,
+            "createdAt": created_at,
+            "clickCount": 0,
+            "GSI1PK": f"OWNER#{owner_id}",
+            "GSI1SK": created_at,
+        }
+        if expires_at is not None:
+            item["expiresAt"] = expires_at
+
         try:
-            table.put_item(
-                Item={
-                    "PK": f"SHORT#{code}",
-                    "SK": "META",
-                    "longUrl": long_url,
-                    "ownerId": owner_id,
-                    "createdAt": created_at,
-                    "clickCount": 0,
-                    "GSI1PK": f"OWNER#{owner_id}",
-                    "GSI1SK": created_at,
-                },
-                # Only write if no item with this PK exists yet.
-                ConditionExpression="attribute_not_exists(PK)",
-            )
+            table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
             log_event("link_created", code=code, owner=owner_id)
-            return _response(201, {
+            response_body = {
                 "shortCode": code,
                 "longUrl": long_url,
                 "createdAt": created_at,
-            })
+            }
+            if expires_at is not None:
+                response_body["expiresAt"] = expires_at
+            return _response(201, response_body)
         except ClientError as err:
             if err.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 # Code clash (very rare). Loop and pick a new code.
