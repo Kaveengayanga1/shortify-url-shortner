@@ -16,6 +16,7 @@ resource "aws_apigatewayv2_stage" "default" {
   auto_deploy = true
 
   default_route_settings {
+    detailed_metrics_enabled = true
     throttling_burst_limit = 20
     throttling_rate_limit  = 10
   }
