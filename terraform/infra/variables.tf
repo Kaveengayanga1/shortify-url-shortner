@@ -18,3 +18,8 @@ variable "project_name" {
   type        = string
   default     = "shortify"
 }
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications."
+  type        = string
+}
